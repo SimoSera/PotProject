@@ -21,7 +21,8 @@ const char* mqtt_topic3 = "pot/light";
 const char* mqtt_topic4 = "pot/moisture";
 const char* mqtt_topic5 = "pot/aqi_uba";
 
-char DEVICE_ID[6];
+char MAC_ADDRESS[6];
+String DEVICE_ID_STRING="";
 
 #define PIN_LIGHT 35
 #define PIN_MOISTURE 32
@@ -75,12 +76,23 @@ void setup_wifi() {
   Serial.println("WiFi connected!");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
-  while(esp_wifi_get_mac(WIFI_IF_STA,DEVICE_ID)!=ESP_OK){
-    print("Error getting ESP32 MAC address(Device ID)"){
-      
-    }
+
+  // Code to get the device id ax the mac address
+  while(esp_wifi_get_mac(WIFI_IF_STA,MAC_ADDRESS)!=ESP_OK){
+    Serial.print("Error getting ESP32 MAC address(Device ID)");
+    delay(1000);
   }
+  for (int i = 0; i < 6; i++) {
+    if (MAC_ADDRESS[i] < 0x10) {
+      DEVICE_ID += "0"; // Add leading zero for single hex digit
+    }
+    DEVICE_ID += String(MAC_ADDRESS[i], HEX);
+  }
+
+  DEVICE_ID.toUpperCase(); // make uppercase
+  Serial.println("DEVICE_ID: "+DEVICE_ID);
 }
+
 
 // Funzione per connettersi al broker MQTT
 void reconnect_mqtt() {
@@ -135,24 +147,24 @@ void loop() {
   */
   // sia tempC,humidity,moisture,light li avevo già calcolati quindi le prime righe di ogni blocco sono da togliere
 
-  String tempStr =String(DEVICE_ID)+" "+String(sensors.getTemperature());
+  String tempStr =DEVICE_ID+" "+String(sensors.getTemperature());
   client.publish(mqtt_topic1, tempStr.c_str());
 
-  tempStr=String(DEVICE_ID)+" "+String(sensors.getHumidity());
+  tempStr=DEVICE_ID+" "+String(sensors.getHumidity());
   client.publish(mqtt_topic2, tempStr.c_str());
 
-  tempStr=String(DEVICE_ID)+" "+String(sensors.getLightLevel()); 
+  tempStr=DEVICE_ID+" "+String(sensors.getLightLevel()); 
   //non c'è da specificare il DEC per decimale perchè Arduino già converte automaticamente il numero in una stringa in formato decimale (DEC). Quindi non devi preoccuparti di specificarlo!
   client.publish(mqtt_topic3, tempStr.c_str());
 
-  tempStr=String(DEVICE_ID)+" "+String(sensors.getSoilMoisture());
+  tempStr=DEVICE_ID+" "+String(sensors.getSoilMoisture());
   client.publish(mqtt_topic4, tempStr.c_str());
 
   uint8_t aqi_uba = sensors.getAQI();
   while(aqi_uba==255){ // while i can't get a read for the AQI: try to read again
     aqi_uba = sensors.getAQI();
   }
-  tempStr =String(DEVICE_ID)+" "+String(aqi_uba);
+  tempStr =DEVICE_ID+" "+String(aqi_uba);
   client.publish(mqtt_topic5, tempStr.c_str());
 
 
