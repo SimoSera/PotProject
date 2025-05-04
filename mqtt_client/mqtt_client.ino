@@ -2,30 +2,31 @@
 /* Noi usiamo esp32 quindi come hai scritto dobbiamo usare Wifi*/
 #include <WiFi.h>           // Per ESP32/ESP8266 usa <WiFi.h>, per Arduino Uno WiFi usa <WiFiNINA.h>
 #include <PubSubClient.h>   // Libreria MQTT
-#include "VaseSensors.h"
+#include "PotSensors.h"
 
 #define SAMPLING_PERIOD  600// seconds
 
 // === CONFIG RETE WiFi ===
-const char* ssid = "FRITZ!Box 7530 GR";
-const char* password = "05768323608271690844";
+const char* ssid = "SSID";
+const char* password = "PASSWORD";
 
 // === CONFIG MQTT ===
 IPAddress ip_server;
 char* mqtt_server;  // IP del Raspberry Pi
 const char* mqtt_server_hostname = "raspberrypi";  // Hostname del Raspberry Pi
 const int mqtt_port = 1883;
-const char* mqtt_topic1 = "vaso/temperature";
-const char* mqtt_topic2 = "vaso/humidity";
-const char* mqtt_topic3 = "vaso/light";
-const char* mqtt_topic4 = "vaso/moisture";
-const char* mqtt_topic5 = "vaso/aqi_uba";
+const char* mqtt_topic1 = "pot/temperature";
+const char* mqtt_topic2 = "pot/humidity";
+const char* mqtt_topic3 = "pot/light";
+const char* mqtt_topic4 = "pot/moisture";
+const char* mqtt_topic5 = "pot/aqi_uba";
 
+char DEVICE_ID[6];
 
 #define PIN_LIGHT 35
 #define PIN_MOISTURE 32
 
-VaseSensors sensors(PIN_LIGHT,PIN_MOISTURE); 
+PotSensors sensors(PIN_LIGHT,PIN_MOISTURE); 
 
 
 
@@ -62,7 +63,7 @@ client.loop()
 void setup_wifi() {
   delay(10);
   Serial.println();
-  Serial.print("Connessione al WiFi...");
+  Serial.print("Connecting to WiFi...");
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -71,24 +72,29 @@ void setup_wifi() {
   }
   
   Serial.println("");
-  Serial.println("WiFi connesso!");
+  Serial.println("WiFi connected!");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+  while(esp_wifi_get_mac(WIFI_IF_STA,DEVICE_ID)!=ESP_OK){
+    print("Error getting ESP32 MAC address(Device ID)"){
+      
+    }
+  }
 }
 
 // Funzione per connettersi al broker MQTT
 void reconnect_mqtt() {
   while (!client.connected()) {
-    Serial.print("Connessione al broker MQTT...");
+    Serial.print("Connecting to MQTT broker...");
     String clientId = "ArduinoClient-";
     clientId += String(random(0xffff), HEX);
 // non necessario, visto che ho un solo arduino tutte le volte. la riga di codice sopra mi farebbe ottenere tipo clientId = "ArduinoClient-3f7b"
     if (client.connect(clientId.c_str())) {
-      Serial.println("connesso!");
+      Serial.println("Connected to broker!");
     } else {
-      Serial.print("fallito, rc=");
+      Serial.print("Connection to broker Failed, rc=");
       Serial.print(client.state());
-      Serial.println(" riprovo in 5 secondi");
+      Serial.println(" retry in in 5 seconds");
       delay(5000);
     }
   }
@@ -129,24 +135,24 @@ void loop() {
   */
   // sia tempC,humidity,moisture,light li avevo già calcolati quindi le prime righe di ogni blocco sono da togliere
 
-  String tempStr =String(sensors.getTemperature());
+  String tempStr =String(DEVICE_ID)+" "+String(sensors.getTemperature());
   client.publish(mqtt_topic1, tempStr.c_str());
 
-  tempStr=String(sensors.getHumidity());
+  tempStr=String(DEVICE_ID)+" "+String(sensors.getHumidity());
   client.publish(mqtt_topic2, tempStr.c_str());
 
-  tempStr=String(sensors.getLightLevel()); 
+  tempStr=String(DEVICE_ID)+" "+String(sensors.getLightLevel()); 
   //non c'è da specificare il DEC per decimale perchè Arduino già converte automaticamente il numero in una stringa in formato decimale (DEC). Quindi non devi preoccuparti di specificarlo!
   client.publish(mqtt_topic3, tempStr.c_str());
 
-  tempStr=String(sensors.getSoilMoisture());
+  tempStr=String(DEVICE_ID)+" "+String(sensors.getSoilMoisture());
   client.publish(mqtt_topic4, tempStr.c_str());
 
   uint8_t aqi_uba = sensors.getAQI();
   while(aqi_uba==255){ // while i can't get a read for the AQI: try to read again
     aqi_uba = sensors.getAQI();
   }
-  tempStr =String(aqi_uba);
+  tempStr =String(DEVICE_ID)+" "+String(aqi_uba);
   client.publish(mqtt_topic5, tempStr.c_str());
 
 
