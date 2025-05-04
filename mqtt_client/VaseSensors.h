@@ -1,5 +1,5 @@
-#ifndef VASE_SENSORS_H
-#define	VASE_SENSORS_H
+#ifndef POT_SENSORS_H
+#define	POT_SENSORS_H
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -11,7 +11,7 @@ class ENS160;
                             // I chose to define this as the temperature/humidity shouldn't change fast and reading the sensor uses resources
 
 
-class VaseSensors
+class PotSensors
 {
 private:
     uint8_t LIGHT_PIN;                  // analog pin for the light sensor
@@ -25,7 +25,7 @@ private:
     time_t last_aht;                    // Reading the aht with frequency higher than 5 seconds doesn't make sense
     
 public:
-    VaseSensors(uint8_t LIGHT_PIN,          // PIN of the Analog light sensor
+    PotSensors(uint8_t LIGHT_PIN,          // PIN of the Analog light sensor
         uint8_t SOIL_MOISTURE_PIN,          // PIN of the Analog soil moisture sensor
         unsigned int ENS160_I2C_ADDRESS = 0x53 /* 0x53 or 0x52*/,  // I2C address of the ENS160 sensor
         bool verbose=true);               // True = print to serial
@@ -49,5 +49,5 @@ public:
 
 
 
-#endif // !VASE_SENSORS_H
+#endif // !POT_SENSORS_H
 
