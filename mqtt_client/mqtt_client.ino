@@ -3,21 +3,21 @@
 #include <WiFi.h>           // Per ESP32/ESP8266 usa <WiFi.h>, per Arduino Uno WiFi usa <WiFiNINA.h>
 #include <PubSubClient.h>   // Libreria MQTT
 #include "PotSensors.h"
-
+#include <esp_wifi.h>
 #define SAMPLING_PERIOD  600// seconds
 
 // === CONFIG RETE WiFi ===
-const char* ssid = "SSID";
-const char* password = "PASSWORD";
+const char* ssid = "Mi9T";
+const char* password = "ciaociao";
 
 // === CONFIG MQTT ===
 IPAddress ip_server;
-char* mqtt_server;  // IP del Raspberry Pi
-const char* mqtt_server_hostname = "raspberrypi";  // Hostname del Raspberry Pi
+char mqtt_server[16];  // IP del Raspberry Pi
+const char* mqtt_server_hostname = "raspberrypi.local";  // Hostname del Raspberry Pi
 const int mqtt_port = 1883;
 String mqtt_topic= "pot/";
 
-char MAC_ADDRESS[6];
+uint8_t MAC_ADDRESS[6];
 String DEVICE_ID="";
 
 #define PIN_LIGHT 35
@@ -114,12 +114,11 @@ void setup() {
   
   
   WiFi.hostByName(mqtt_server_hostname, ip_server);
-  mqtt_server=(char*)malloc(ip_server.toString().length() +1);
-  strcpy(mqtt_server, ip_server.toString().c_str());
-  Serial.print("MQTT Server: ");
+  strcpy(&mqtt_server[0], ip_server.toString().c_str());
+  Serial.println("MQTT Server: ");
   Serial.print(mqtt_server);
   Serial.println(ip_server.toString());
-  
+  delay(300);
   mqtt_topic+=DEVICE_ID;
   client.setServer(mqtt_server, mqtt_port);
   // è come se dicesse: “Ehi client MQTT, il broker lo trovi all’indirizzo mqtt_server, e ascolta sulla porta mqtt_port.” indirizzo? quello del RASPBERRY PI
@@ -154,7 +153,7 @@ void loop() {
   }
   String aqi =String(aqi_uba);
   tempStr=temperature+" "+humidity+" "+light+" " +moisture+" "+aqi;
-  client.publish(mqtt_topic, tempStr.c_str());
+  client.publish(mqtt_topic.c_str(), tempStr.c_str());
 
 
 
