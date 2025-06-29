@@ -1,0 +1,16 @@
+[{
+	"TB_HTTP_token" : "4ou816wmeglwnzthg965",
+	"TB_device_name": "Pot 1",
+	"MAC_sensors" : "94B555F9FEC4",
+	"MAC_cam": "94B555F9FEC4",
+	"Settings": {
+		"LED_on": false,
+		"moisture_threshold": 300,
+		"light_threshold": 400,
+		"base_color": "3 100 0 0 0",
+		"water_effect": "3 200 100 155 50",
+		"AQI_effect":"3 200 100 155 50",
+		"auto_brightness_on":true,
+		"auto_brightness_gamma":0.8
+	}
+}]

@@ -1,3 +1,4 @@
+#include <Arduino.h>
 /*
   HARDWARE:
     MCU: ESP32 DEVKIT V1 (similar clone)                                          (https://it.aliexpress.com/item/32959541446.html (ESP32 38 pin Micro-USB CP2102))
@@ -9,7 +10,6 @@
         AHT21 -> temperature + humidity
         ENS160 -> AQI (Air Quality Index (UBA)) sensor
 */
-
 
 
 /*
@@ -31,6 +31,9 @@
           B = blue level (0-255)
 */
 
+// publishes on pot/<MAC address without :> 
+// subscribes on pot/<MAC Address without :>/leds
+// uses LWT (Last Will  and Testament), which publishes a message when keep alive is missed, signaling disconnection
 
 
 
@@ -39,18 +42,16 @@ IMPLEMENT SPEED
 
 
 */
-
-#include <Adafruit_NeoPixel.h>          // Docs: https://adafruit.github.io/Adafruit_NeoPixel/html/class_adafruit___neo_pixel.html
 /* Noi usiamo esp32 quindi come hai scritto dobbiamo usare Wifi*/
 #include <WiFi.h>           // For ESP32/ESP8266 use <WiFi.h>, for Arduino Uno WiFi use <WiFiNINA.h>
 #include <PubSubClient.h>   // LIbrary for MQTT on ESP32
+#include "LedStrip.h"       // Class defined by me to manage led strip
 #include "PotSensors.h"     // Class created by me to manage all sensors stuff
 #include <esp_wifi.h>       // Needed to be able to get the MAC address (esp_wifi_get_mac)
 
 
 unsigned long timer_sensors;    // timer used to check if sensors need to be read in loop()
 unsigned long timer_mqtt_check;       // timer used to delay the call of client.loop() as explained online https://github.com/knolleary/pubsubclient/issues/756
-unsigned long timer_leds;       // timer used for the leds effects
 
 // === CONFIG RETE WiFi ===
 const char* ssid = "Mi9T";      // ssif (name) of the wifi
@@ -70,28 +71,18 @@ String DEVICE_ID="";          // where the MAC address is stored to easily put i
 // Note that for the module that uses I2C no PIN is specified as the standard I2C pins are used (SDA(42) + SCL(39))
 #define PIN_LIGHT 35          // pin used for the light sensor
 #define PIN_MOISTURE 32       // pin of the soil moisture sensor
-#define PIN_LEDS  33           // pin for the LEDS lights
-#define NUMPIXELS 16          // number of leds to be used on the strip
+#define STRIP_PIN 25
+#define NUM_PIXELS 40
 
 #define SENSOR_SAMPLING_PERIOD 10000    // milliseconds to wait between sensor reads
 #define MQTT_LOOP_CHECK_PERIOD 500      // milliseconds between calls to client.loop(), used together with timer_mqtt_check
-
-//=== Define LEDS settings ===
-uint32_t W=0xff000000,R=0x00ff0000,G=0x0000ff00,B=0x000000ff;    // used to store the colors values (stored as 32 bit to easily sum them together)
-bool breathing=false,circling=false,breathing_inverse=false,light_on=true;    // used to activate effects
-size_t leds_timestep=0;                 // used during effects to track current step
-#define BREATHING_EFFECT_PERIOD 30      // period between updates of the breathing effect
-#define BREATHING_EFFECT_DURATION 3000  // total duration of the breathing effect (brethe in and out)
-#define CICLING_EFFECT_PERIOD 100     // period between updates of the cicling effect
 
 
 // === Objects ===
 
 PotSensors sensors(PIN_LIGHT,PIN_MOISTURE);       // Object of type PotSensors, used to manage all the sensors 
-int light_threashold=0;
 
-
-Adafruit_NeoPixel pixels(NUMPIXELS, PIN_LEDS, NEO_GRBW + NEO_KHZ800);     // object used to manage the led strip
+LedStrip leds(NUM_PIXELS,STRIP_PIN,0x80700000);
 
 WiFiClient espClient;   // Object used by the PubSubClient library/object
 
@@ -124,7 +115,7 @@ void setup_wifi() {
     delay(1000);
   }
   DEVICE_ID="";
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 6; ++i) {
     if (MAC_ADDRESS[i] < 0x10) {
       DEVICE_ID += "0"; // Add leading zero for single hex digit
     }
@@ -139,15 +130,16 @@ void setup_wifi() {
 
 // Funzione per connettersi al broker MQTT
 void reconnect_mqtt() {
-  if(WiFi.status() != WL_CONNECTED){
-    setup_wifi();
-  }
   while (!client.connected()) {
+    if(WiFi.status() != WL_CONNECTED){
+      setup_wifi();
+    }
     Serial.print("Connecting to MQTT broker...");
     String clientId = "Pot-"+DEVICE_ID;
     clientId += String(random(0xffff), HEX);
-  // non necessario, visto che ho un solo arduino tutte le volte. la riga di codice sopra mi farebbe ottenere tipo clientId = "ArduinoClient-3f7b"
-    if (client.connect(clientId.c_str())) {
+    String LWTtopic="pot/"+DEVICE_ID+"/disconnect";
+    String LWTmessage="1";
+    if (client.connect(clientId.c_str(), LWTtopic.c_str() , 2, true, LWTmessage.c_str())) {
       Serial.println("Connected to broker!");
     } else {
       Serial.print("Connection to broker Failed, rc=");
@@ -157,160 +149,124 @@ void reconnect_mqtt() {
     }
   }
   client.subscribe(("pot/"+DEVICE_ID+"/leds").c_str());
-
+  Serial.println(("pot/"+DEVICE_ID+"/leds").c_str());
 }
 
 
-void callbackSubscribe(char* topic, byte* message, unsigned int length){
-  circling=false;
-  breathing=false;
-  char token=message[0];
-  if(token=='0'){ // message = 0 -> turn off leds
-    light_on=false;
-    pixels.fill(0);
-    pixels.show();
+void callbackSubscribe(char* topic, byte* payload, unsigned int length) {
+  char message[129];
+  if (length >= sizeof(message) || length==0) return; // Avoid overflow
+  memcpy(message, payload, length);
+  message[length] = '\0'; // Null-terminate
+  Serial.println(message);
+  char* tokenStr = strtok(message, " ");
+  if (!tokenStr){
+    Serial.println("Message missing??"); 
+    return;
+  }
+  int token = atoi(tokenStr);
+  if(token==0 && (tokenStr[0]>'9' || tokenStr[0]<'0' )){
+    Serial.println("Wrong type of message");
+    return;
+  }
+  // Token 0: Turn off
+  if (token == 0) {
+      leds.turn_off();
+      return;
+  }
+  if(token==1){
+    leds.turn_on();
+  }
+  // Token 8: Float case
+  if (token == 8) {
+      char* arg1 = strtok(nullptr, " ");
+      if (!arg1) {
+          Serial.println("Error in parsing subscribe message (float)");
+          return;
+      }
+      float f = strtof(arg1, nullptr);
+      leds.set_brightness_gamma(f);
+      leds.turn_on();
+  }
+  if(token==6 || token==7){
+    char* arg1=strtok(nullptr," ");
+    uint32_t val = strtoul(arg1, nullptr, 10);
+    if(token==6){
+      leds.set_light_threshold(val);
+    }else{
+      leds.set_auto_brightness(bool(val));
+    }
+  }
+  // Tokens 2–7: General number cases
+  if (token >= 2 && token <= 4) {
+      char* rgbwstr[4];
+      uint32_t rgbw[4];
+      color_t col=0;
+      for(int i=0;i<4;++i){
+        rgbwstr[i]=strtok(nullptr, " ");
+        if (!rgbwstr[i]) {
+          Serial.println("Error in parsing subscribe message (arg1)");
+          return;
+        }
+        rgbw[i]=strtoul(rgbwstr[i],nullptr,10);
+        col+=rgbw[i]<<(8*(3-i));
+      }
+      
+      if(token == 2){
+        leds.set_still(col);
+      }
+      if (token == 3 || token == 4) {
+            char* arg2 = strtok(nullptr, " ");
+            if (!arg2) {
+                Serial.println("Error in parsing subscribe message (arg2)");
+                return;
+            }
+            uint8_t speed = strtoul(arg2, nullptr, 10);
+            if (token == 3) leds.set_breathing(col, speed);
+            if (token == 4) leds.set_circling(col, speed);
+      }
+  }
+  if(token==2 || token > 8){
+    Serial.println("Unknown token or unhandled case");
     return;
   }
 
-  if(token=='4'){  //message = 4 -> change threashold
-    int temp=0,i=2;
-    while(((char)message[i])!=' ' && i<length){
-      temp*=10;
-      temp+=message[i]-'0';
-      i++;
-    }
-    light_threshold=temp;
-    return;
-  }
+  leds.update(sensors.getLightLevel());
 
-  // all other messages (1,2,3) -> light effect (still, circling, breathing)
-
-  int count=0,temp=0,speed=0;
-  for(unsigned int i=2;i<length;i++){
-
-    while(((char)message[i])!=' ' && i<length){
-      temp*=10;
-      temp+=message[i]-'0';
-      i++;
-    }
-    count++;
-    if(count==1){
-      W=temp <<  24;
-    } else if(count==2){
-      R=temp <<  16;
-    }else if(count==3){
-      G=temp <<  8;
-    }else if(count==4){
-      B=temp;
-    }else if(count==5){
-      speed=temp;
-    }
-    temp=0;
-  }
-  switch(token){
-    case 0: // should never happen
-      break;
-    case 1:
-      break;
-    case 2:
-      breathing=true;
-      // implment speed
-      break;
-    case 3:
-      circling=true;
-      //implment speed
-      break;
-  }
-  leds_timestep=0;
-  timer_leds=millis();
-  if(light_on){
-    pixels.fill(W);
-    pixels.show();
-  }
 }
 
 
 
 
 void setup() {
-  Serial.begin(9600);
-  pixels.begin();
-  pixels.fill(W+R);
-  pixels.show();
-  setup_wifi();
-  
-  
-  WiFi.hostByName(mqtt_server_hostname, ip_server);
-  strcpy(&mqtt_server[0], ip_server.toString().c_str());
-  Serial.println("MQTT Server: ");
-  Serial.print(mqtt_server);
-  Serial.println(ip_server.toString());
-  delay(300);
-  mqtt_topic+=DEVICE_ID;
-  client.setServer(mqtt_server, mqtt_port);
-  // è come se dicesse: “Ehi client MQTT, il broker lo trovi all’indirizzo mqtt_server, e ascolta sulla porta mqtt_port.” indirizzo? quello del RASPBERRY PI
-  client.setCallback(callbackSubscribe);
-  sensors.init();
-  pixels.fill(W);
-  pixels.show();
-  timer_sensors=millis();
-  timer_leds=millis();
-
+    Serial.begin(9600);
+    leds.set_still(0x80700000);
+    leds.turn_on();
+    delay(500);  //?? otherwise can't connect to wifi
+    setup_wifi();
+    
+    WiFi.hostByName(mqtt_server_hostname, ip_server);
+    strcpy(&mqtt_server[0], ip_server.toString().c_str());
+    Serial.println("MQTT Server: ");
+    Serial.println(mqtt_server);
+    //Serial.println(ip_server.toString());
+    
+    mqtt_topic+=DEVICE_ID;
+    client.setServer(mqtt_server, mqtt_port);
+    client.setCallback(callbackSubscribe);
+    reconnect_mqtt();
+    //client.publish((mqtt_topic+"/new_conn").c_str(), "");   PUT THIS INSIDE THE PART FOR FIRST EVER CONNECTION
+    
+    sensors.init();   
+    timer_sensors=millis();
+    leds.set_breathing(0x008000ff,60);
+    client.loop();
 }
 
 void loop() {
 
-  else{
-
-  }
-  
-  // LEDS EFFECTS part
-  if(light_on){
-    if(sensors.getLightLevel() < light_threahold){
-      light_on=false;
-      pixels.fill(0);
-      pixels.show();
-    }else{
-       if(breathing  &&  (millis()-timer_leds) > BREATHING_EFFECT_PERIOD){  // if the breathing effect is active and at least BREATING_EFFECT_PERIOD milliseconds have elapsed 
-        if(!breathing_inverse){
-          leds_timestep++;
-          if(leds_timestep>=(BREATHING_EFFECT_DURATION/BREATHING_EFFECT_PERIOD)/2){
-            breathing_inverse=true;
-          }
-        }else {
-          leds_timestep--;
-          if(leds_timestep==0){ //reset effect
-            breathing_inverse=false;
-          }
-        }
-        float p=leds_timestep/(BREATHING_EFFECT_DURATION/BREATHING_EFFECT_PERIOD);
-        pixels.fill(W*p+R*p+G*p+B*p);
-        timer_leds=millis();
-        pixels.show();
-      }
-      if(circling && (millis()-timer_leds) > CICLING_EFFECT_PERIOD){ // if the cicling effect is active and at least CICLING_EFFECT_PERIOD milliseconds have elapsed
-        if(leds_timestep==NUMPIXELS){
-          leds_timestep=0;   
-        }
-        pixels.fill(W);
-        pixels.fill(R+G+B,leds_timestep,1);
-        leds_timestep++;
-        timer_leds=millis();
-        pixels.show();
-      }
-    }
-
-
-  }else{
-    if(sensors.getLightLevel() >= light_threahold){
-      light_on=true;
-      pixels.fill(W);
-      pixels.show();
-    }
-  }
-  
-
-
+  // LEDS update
+  leds.update(sensors.getLightLevel());
   if (!client.connected()) {
     reconnect_mqtt();
   }
@@ -333,7 +289,7 @@ void loop() {
     //non c'è da specificare il DEC per decimale perchè Arduino già converte automaticamente il numero in una stringa in formato decimale (DEC). Quindi non devi preoccuparti di specificarlo!
     String moisture=String(sensors.getSoilMoisture());
     uint8_t aqi_uba = sensors.getAQI();
-    while(aqi_uba==255){ // while i can't get a read for the AQI: try to read again
+    while(aqi_uba==255){ // (255=error), while i can't get a read for the AQI: try to read again
       aqi_uba = sensors.getAQI();
     }
     String aqi =String(aqi_uba);
@@ -352,6 +308,8 @@ void loop() {
 
   
 }
+
+  
 
 
 
