@@ -9,6 +9,11 @@ class ENS160;
 
 #define AHT_INTERVAL 30000 //   time interval (in milliseconds) after which the aht sensor sould actually update values
                             // I chose to define this as the temperature/humidity shouldn't change fast and reading the sensor uses resources
+// The two following values are set during sensor calibration
+#define SOIL_MOISTURE_MIN_VAL 1200
+#define SOIL_MOISTURE_MAX_VAL 3300
+#define LIGHT_SENSOR_VOLTAGE 5
+
 
 
 class PotSensors

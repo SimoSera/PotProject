@@ -1,0 +1,7 @@
+
+path: '/content/gdrive/My Drive/data'
+train: images/fotoiphone
+val: images/val
+
+nc: 2
+names: ['healthy' , 'ill']

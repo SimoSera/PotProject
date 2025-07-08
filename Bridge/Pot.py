@@ -73,9 +73,7 @@ class Pot():
 
     ID_sensors: str
     ID_cam :str
-#    TB_MQTT_user: str
     TB_device_name: str
- #   TB_MQTT_password: str
     TB_HTTP_Token: str
     LED_on: bool = False
     moisture_threshold: int
@@ -83,36 +81,40 @@ class Pot():
     base_color: ColorEffect
     water_effect: ColorEffect
     AQI_effect: ColorEffect
+    ill_effect: ColorEffect
     auto_brightness_on: bool = True
     auto_brightness_gamma: float = 0.1
     data: SensorData
-    prediction: int
     connected: bool =False
     last_effect: ColorEffect
-
+    brightness: int
+    healthy_leaves: int
+    ill_leaves: int
+    healthy: bool
+    
 
     def __init__(self,
                 ID_sensors: str,
                 ID_cam :str,
-#                TB_MQTT_user: str,
                 TB_device_name: str ,
-#                TB_MQTT_password: str,
                 TB_HTTP_Token: str,
                 LED_on: bool = False,
-                moisture_threshold: int = 300,
+                moisture_threshold: int = 30,
                 light_threshold: int = 400,
                 base_color: ColorEffect= ColorEffect(255,0,0,0,Effect.STATIC),
                 water_effect: ColorEffect = ColorEffect(100,0,0,170,Effect.BREATHING),
                 AQI_effect: ColorEffect= ColorEffect(0,170,0,0,Effect.CIRCLING),
+                ill_effect: ColorEffect = ColorEffect(100,255,50,0,Effect.BREATHING),
                 auto_brightness_on: bool =True,
                 auto_brightness_gamma: float =0.1,
-                
+                brightness: int=100,
+                healthy_leaves: int = 0,
+                ill_leaves: int = 0,
+                healthy: bool = False,
                 ):
         self.ID_cam=ID_cam
         self.ID_sensors=ID_sensors
         self.data=SensorData()
-#        self.TB_MQTT_user=TB_MQTT_user
-#        self.TB_MQTT_password=TB_MQTT_password
         self.TB_HTTP_Token=TB_HTTP_Token
         self.LED_on=LED_on
         self.moisture_threshold=moisture_threshold
@@ -124,14 +126,17 @@ class Pot():
         self.auto_brightness_gamma=auto_brightness_gamma
         self.TB_device_name=TB_device_name
         self.last_effect=self.base_color
+        self.brightness=brightness
+        self.ill_effect=ill_effect
+        self.healthy=healthy
+
+
     @classmethod
     def from_dict(cls,d: dict):
         settings = d["Settings"]
         return cls(ID_cam=d["MAC_cam"],
         ID_sensors=d["MAC_sensors"],
- #       TB_MQTT_user=d["TB_MQTT_user"],
         TB_device_name=d["TB_device_name"],
- #       TB_MQTT_password=d["TB_MQTT_password"],
         TB_HTTP_Token=d["TB_HTTP_token"],
         LED_on=settings["LED_on"],
         moisture_threshold=settings["moisture_threshold"],
@@ -140,14 +145,15 @@ class Pot():
         water_effect=EffectFromString(settings["water_effect"]),
         AQI_effect=EffectFromString(settings["AQI_effect"]),
         auto_brightness_on=settings["auto_brightness_on"],
-        auto_brightness_gamma=settings["auto_brightness_gamma"])
+        auto_brightness_gamma=settings["auto_brightness_gamma"],
+        brightness=settings["brightness"], 
+        ill_effect=settings["ill_effect"],
+        healthy=settings["healthy"])
 
     def to_dict(self) -> dict:
         return {
             "MAC_cam": self.ID_cam,
             "MAC_sensors": self.ID_sensors,
- #           "TB_MQTT_user": self.TB_MQTT_user,
- #           "TB_MQTT_password": self.TB_MQTT_password,
             "TB_HTTP_token": self.TB_HTTP_Token,
             "TB_device_name":self.TB_device_name,
             "Settings": {
@@ -158,19 +164,12 @@ class Pot():
                 "water_effect": self.water_effect.toString,
                 "AQI_effect": self.AQI_effect.toString,
                 "auto_brightness_on": self.auto_brightness_on,
-                "auto_brightness_gamma": self.auto_brightness_gamma
+                "auto_brightness_gamma": self.auto_brightness_gamma,
+                "brightness": self.brightness,
+                "ill_effect" : self.ill_effect,
+                "healthy" : self.healthy
             }
         }
-
-
-    # DELETE ??
-    # def publish_telemetry(self, mqtt_client, telemetry_data: dict):
-    #     topic = "v1/devices/me/telemetry"
-    #     payload = json.dumps(telemetry_data)
-    #     mqtt_client.username_pw_set(self.TB_MQTT_user,self.TB_MQTT_password)
-    #     mqtt_client.publish(topic, payload, qos=1)
-	# "TB_MQTT_user": "cgkhdfk1ddc8jl4kaam3",
-	# "TB_MQTT_password":"fsqpjvjvho8mkl8j8hud",
 
     def set_connected(self):
         self.connected=True

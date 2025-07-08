@@ -5,7 +5,13 @@ import time
 from Pot import Pot
 from Pot import ColorEffect
 from MQTTClient import MQTTClient
-from AIManager import AIManager
+from flask import Flask, request, jsonify
+import base64
+import cv2
+import numpy as np
+from ultralytics import YOLO
+
+
 # MQTT conn: 2 -> local (post(leds) + sub(+))
 #              -> server(QOS settings) (sub(bridge topic))
 # HTTP Server(on the other file): cam data
@@ -35,9 +41,8 @@ class Bridge():
     HTTP_access_token: str
     bridge_device_name: str
     
-
-    AIStuff: AIManager
-    MAX_SENSORS_VALUES: int                     # number of values to keep stored and to use on regressor
+    yolo_model: YOLO
+    MAX_SENSORS_VALUES: int  = 1                   # number of values to keep stored and to use on regressor
 
     # RECONNECT PROPERTIES
     FIRST_RECONNECT_DELAY = 1
@@ -52,11 +57,9 @@ class Bridge():
     def __init__(
             self,
             config_path: str,
-            regr_model_path: str ="",
             path_json_pots: str ="",
             local_sub_topic : str = "pot/+",
             client_id_local: str = ''):
-        self.regr_model_path=regr_model_path
         self.local_sub_topic=local_sub_topic
         self.client_id_local=client_id_local
         self.path_config_ini=config_path
@@ -129,7 +132,13 @@ class Bridge():
             pot.auto_brightness_gamma=float(val)
             self.send_pot_attribute(pot,"8 "+str(float(val)))
             #you need to send message
-    
+        elif key == "led_brightness":
+            pot.brightness=int(val)
+            self.send_pot_attribute(pot,"5 "+str(int(val)))
+        elif key == "healthy":
+            pot.healthy=bool(val)
+
+
         self.UpdateLeds(pot)
 
 
@@ -138,11 +147,14 @@ class Bridge():
         
         if pot.data.moisture[pot.data.count-1] < pot.moisture_threshold: # if the measured moisture is lower than threshold
             final_effect=pot.water_effect
-        if pot.data.aqi[pot.data.count-1] < Pot.AQI_threshold:
+        if pot.data.aqi[pot.data.count-1] > Pot.AQI_threshold:
             final_effect=pot.AQI_effect
+        if pot.healthy==False:
+            final_effect=pot.ill_effect
         if final_effect.toString!=pot.last_effect.toString:
             self.send_pot_attribute(pot,final_effect.toString)
             pot.last_effect=final_effect
+        
 
     def send_pot_attribute(self, pot:Pot, message: str):
         self.local_MQTT.publish_mess("pot/"+pot.ID_sensors+"/leds",message)
@@ -172,7 +184,6 @@ class Bridge():
         id=topic_parts[1]
         p = self.get_pot(id)
         if p is None:
-            # New Unknown Pot Connected
             print("Error: Unknown/Unexpected Pot")
             return
         if p.connected==False:
@@ -199,17 +210,14 @@ class Bridge():
         }
 
 
-        if(d.count>=self.MAX_SENSORS_VALUES and self.AIStuff.is_regr_loaded()):
-            pred=self.AIStuff.sensors_regress(p) # remember to edit the pred type
+        if d.count>self.MAX_SENSORS_VALUES :
             del p.data.temperature[0]
             del p.data.humidity[0]
             del p.data.light[0]
             del p.data.moisture[0]
             del p.data.aqi[0]
             p.data.count-=1
-            p.prediction=pred
-            payload["values"]["pred"]=pred 
-
+            
         try:
             print(json.dumps(payload))
             response = requests.post(self.server_url+p.TB_HTTP_Token+"/telemetry", json=payload, timeout=5)
@@ -217,14 +225,17 @@ class Bridge():
                 print(f"HTTP POST failed: {response.status_code} {response.text}")
         except requests.RequestException as e:
             print("HTTP request error:", e)
-        
+
         self.UpdateLeds(p)
+
+
+
 
     def on_connect_local(self,client, userdata, flags, rc, properties):
         self.local_MQTT.subscribe(topic=self.local_sub_topic)
                 
 
-
+    
 
     # still to modidfy for the remote connection  everything
     def on_message_remote(self,client,userdata,msg):
@@ -243,7 +254,7 @@ class Bridge():
         
     # to add ?? (maybe done)
     def  on_connect_remote(self,client, userdata, flags, rc, properties):
-        self.TB_MQTT.subscribe(self.local_sub_topic)
+        self.TB_MQTT.subscribe(self.remote_sub_topic)
         for dev in self.pots:
             if dev.connected:
                 self.TB_MQTT.publish_mess("v1/gateway/connect",f'{{"device": "{dev.TB_device_name}","type": "Pot"}}')
@@ -269,7 +280,6 @@ class Bridge():
             return                          # Possibly change
         
         self.path_json_pots =               config1.get("POTS","JSONSettPath",fallback="./pots.json")
-        regr_model_path =              config1.get("MODELS","Regression_model_path",fallback="regr.pkl")
         yolo_model_path =              config1.get("MODELS","YOLO_model_path",fallback="yolov8m.pt")
         self.MAX_SENSORS_VALUES =           config1.getint("MODELS","MAX_SENSORS_VALUES",fallback=10)
         broker_local =                      config1.get("LOCAL_BROKER","Local_borker_address",fallback="127.0.0.1")
@@ -287,8 +297,9 @@ class Bridge():
 
         self.local_MQTT=MQTTClient(broker_local,port_local,'Local bridge',self.on_connect_local, self.on_message_local)
         self.TB_MQTT=MQTTClient(remote_broker_name,port_remote,'Thingsboard bridge',self.on_connect_remote, self.on_message_remote,remote_MQTT_username,remote_MQTT_pass)
-        self.AIStuff=AIManager(regr_model_path,yolo_model_path)   
-
+        self.yolo_model=YOLO(yolo_model_path)
+        self.yolo_model.info(verbose=True)
+    
     def read_pots(self):
         with open(self.path_json_pots, "r") as f:
             data = json.load(f)
@@ -298,17 +309,75 @@ class Bridge():
         with open(self.path_json_pots, "w") as f:
             json.dump([s.to_dict() for s in self.pots], f)
 
+    
+br = Bridge(config_path="config.ini")
+
+app = Flask(__name__)
+
+@app.route('/camera', methods=['POST'])
+def upload_image():
+    try:
+        # Get image data from request body
+        json_data = request.get_json(False,True,False)
+        if json_data is None:
+            return jsonify({'error': 'Failed to read request as json'}), 400
+        
+        print("image sent by: ",json_data['id'])
+        pot=br.get_pot(json_data['id'])
+        
+        if pot is None:
+            print("Couldn't find the pot that sent the image or it's unknown")
+            return jsonify({'error': 'Failed to identify the pot'}), 400
+        image_base64=json_data['image'] # Read base64 image from json 
+        print(f"Received image") #For Debug
+        image_bytes=base64.b64decode(image_base64) # Decode from base64 to binary
+
+        id=json_data['id']  # Read device id from json
+        f = open(f"images/"+id+".jpg", "wb")  # Save image in file with the id in the name
+        f.write(image_bytes)
+        f.close()
+        print("Image received and saved")
+
+        i = np.frombuffer(image_bytes, dtype=np.uint8) # Convert the image to numpy array
+        i = cv2.imdecode(i, cv2.IMREAD_COLOR) # Convert image from numpy array JPG to cv2 image
+        if i is None:
+            return jsonify({'error': 'Failed to decode image'}), 400
+        print( "starting object detection")
+        res=br.yolo_model(i)
+        count={'ill':0,'healthy':0}
+        for result in res:
+            for box in result.boxes:  # Boxes object for bounding box outputs
+                class_id = box.cls.int()  # box.cls is a tensor, convert to int
+                class_name = br.yolo_model.names[class_id]
+                if class_name in count:
+                    count[class_name] += 1
+        
+        timestamp=int(time.time()*1000)
+        payload={'ts':timestamp,
+                 'ill_leaves':count["ill"],
+                 'healthy_leaves':count["healthy"]}
+        try:
+            print(json.dumps(payload))
+            response = requests.post(br.server_url+pot.TB_HTTP_Token+"/telemetry", json=payload, timeout=5)
+            if response.status_code != 200:
+                print(f"HTTP POST failed: {response.status_code} {response.text}")
+        except requests.RequestException as e:
+            print("HTTP request error:", e)
+            return jsonify({'error': 'Failed to send the infomation to Server'}), 400
+
+        print(f"Image saved correctly at \"images/{id}.jpg\"")
+        return jsonify({'status': 'success'})
+
+    except Exception as e:
+        print("Error:", e)
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
-    br = Bridge(config_path="config.ini")
 
     br.read_config()
     br.read_pots()
     br.mqtt_local_start()
     br.mqtt_remote_start()
-    # add mqtt subscribe to remote
-    print("Started successfully")
-    while True:
-        pass
+    app.run('0.0.0.0',80)
 

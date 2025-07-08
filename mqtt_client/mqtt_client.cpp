@@ -153,6 +153,21 @@ void reconnect_mqtt() {
 }
 
 
+/*
+message to action:
+
+"0"  -> Turn off leds
+"1"  -> Turn on leds
+"2 W R G B"  -> Set light mode to still with color WRGB
+"3 W R G B"  -> Set light mode to breathing woth color WRGB
+"4 W R G B"  -> Set light mode to circling woth color WRGB
+"5 int"    -> Set brightness to val (0-255)
+"6 int"     -> Set light threshold to val (0-1000 lx) 
+"7 bool"   -> Set auto brightness on/off (bool val)   /currently removed
+"8 float"   -> Set auto brightness "gamma" value      /currently removed
+*/
+
+
 void callbackSubscribe(char* topic, byte* payload, unsigned int length) {
   char message[129];
   if (length >= sizeof(message) || length==0) return; // Avoid overflow
@@ -188,12 +203,17 @@ void callbackSubscribe(char* topic, byte* payload, unsigned int length) {
       leds.set_brightness_gamma(f);
       leds.turn_on();
   }
-  if(token==6 || token==7){
+  if(token>=5 && token<=7){
     char* arg1=strtok(nullptr," ");
     uint32_t val = strtoul(arg1, nullptr, 10);
-    if(token==6){
+    if(token==5){
+      if(val>255){
+        return;
+      }
+      leds.set_brightness(val);
+    }else if(token==6){
       leds.set_light_threshold(val);
-    }else{
+    }else {
       leds.set_auto_brightness(bool(val));
     }
   }
@@ -226,9 +246,8 @@ void callbackSubscribe(char* topic, byte* payload, unsigned int length) {
             if (token == 4) leds.set_circling(col, speed);
       }
   }
-  if(token==2 || token > 8){
-    Serial.println("Unknown token or unhandled case");
-    return;
+  if(token==5){
+
   }
 
   leds.update(sensors.getLightLevel());

@@ -57,14 +57,13 @@ struct LedStrip{
     void update(int light_level);
     void turn_on();
     void turn_off();
-    void set_base_color(color_t base);
-    void set_basic();
     void set_still(color_t still_color);
     void set_circling(color_t effect_color,uint8_t effect_speed=0);
     void set_breathing(color_t effect_color,uint8_t effect_speed=0);
     void set_auto_brightness(bool on);
     void set_brightness_gamma(float gamma);
     void set_light_threshold(int threshold);
+    void set_brightness(uint8_t brightness);
     void breathing_step();
     void circling_step();
 };

@@ -3,6 +3,8 @@
 #include <HTTPClient.h>
 #include <base64.h>
 #include <ArduinoJson.h>
+#include <string>
+#include <esp_wifi.h>       // Needed to be able to get the MAC address (esp_wifi_get_mac)
 
 //
 // WARNING!!! PSRAM IC required for UXGA resolution and high JPEG quality
@@ -43,7 +45,7 @@ const char *ssid = "Mi9T";//"FRITZ!Box 7530 GR";
 const char *password = "ciaociao";//"05768323608271690844";
 const char *url = "http://raspberrypi.local:80/camera";
 
-
+String DEVICE_ID="";
 
 // Setup of the camera
 void setupCam(){
@@ -142,6 +144,24 @@ void setupWifi(){
   Serial.println("WiFi connected");
   Serial.print("Camera Ready! IP: ");
   Serial.println(WiFi.localIP());
+
+  uint8_t MAC_ADDRESS[6];       // used to read the MAC address
+  // Code to get the device id ax the mac address
+  while(esp_wifi_get_mac(WIFI_IF_STA,MAC_ADDRESS)!=ESP_OK){
+    Serial.print("Error getting ESP32 MAC address(Device ID)");
+    delay(1000);
+  }
+  DEVICE_ID="";
+  for (int i = 0; i < 6; ++i) {
+    if (MAC_ADDRESS[i] < 0x10) {
+      DEVICE_ID += "0"; // Add leading zero for single hex digit
+    }
+    DEVICE_ID += String(MAC_ADDRESS[i], HEX);
+  }
+
+  DEVICE_ID.toUpperCase(); // make uppercase
+  Serial.println("DEVICE_ID: "+DEVICE_ID);
+
 }
 
 
@@ -149,6 +169,9 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
   Serial.println();
+
+  
+
 
   setupCam();
   Serial.println("Camera initialization succefull");
@@ -174,8 +197,7 @@ int sendImage() {
   
   
   DynamicJsonDocument doc(output.length()+100); // Adjust size as needed
-  String deviceID = "1";
-  doc["id"] = deviceID;
+  doc["id"] = DEVICE_ID;
   doc["image"] = output;
 
   String jsonString;
@@ -197,7 +219,7 @@ int sendImage() {
     http.end();
     esp_camera_fb_return(fb);
     return -1;
-  }
+  } 
 
   http.end();
   esp_camera_fb_return(fb);
@@ -205,9 +227,9 @@ int sendImage() {
 }
 
 void loop() {
-  while(sendImage()==-1){}
-
+  sendImage();
   // Instead of delay consider shutting down the esp32 and waking it up after (forx example after 1 day)
-  esp_sleep_enable_timer_wakeup(600000000); //60 seconds
-  esp_deep_sleep_start();
+ // esp_sleep_enable_timer_wakeup(600000000); //60 seconds
+ // esp_deep_sleep_start();
+  delay(60000);
 }

@@ -2,6 +2,7 @@
 #include <algorithm>
 
     void LedStrip::update(int light_level){
+        // auto brightness is a removed functionality
         if(auto_brightness_){
             brightness_=min(int((light_level-light_threshold_)*brightness_gamma_)+50,220);   // to revise !!!!!!!!!!!!
             strip_.setBrightness(brightness_);
@@ -22,6 +23,7 @@
                 }else if(circling_){
                     circling_step();
                 } else{
+                    strip_.setBrightness(brightness_);
                     strip_.show();
                 }
             }
@@ -44,6 +46,7 @@
     void LedStrip::set_still(color_t still_color){
         effect_color_=still_color;
         strip_.fill(effect_color_);
+        strip_.setBrightness(brightness_);
         update(last_light_level_);
     }
 
@@ -68,7 +71,7 @@
     }
 
     void  LedStrip::breathing_step(){
-        if(millis()-timer_ > (effect_update_period_/(brightness_/255.0))){
+        if(millis()-timer_ > (effect_update_period_)){
         
             if(effect_timestep_>=brightness_ && breathing_==1){
                 breathing_=2;
@@ -100,13 +103,19 @@
         }
     }
 
-
+    // removed functionality
     void LedStrip::set_auto_brightness(bool on){
         auto_brightness_=on;
     }
+    // removed functionality
     void LedStrip::set_brightness_gamma(float gamma){
         brightness_gamma_=gamma;
     }
     void LedStrip::set_light_threshold(int threshold){
         light_threshold_=threshold;
+    }
+
+
+    void LedStrip::set_brightness(uint8_t brightness){
+        brightness_ = brightness;
     }

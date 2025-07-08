@@ -64,12 +64,12 @@ void PotSensors::init() {
 }
 
 int PotSensors::getSoilMoisture() const{
-    return analogRead(this->SOIL_MOISTURE_PIN);
+    return 100-((analogRead(this->SOIL_MOISTURE_PIN)-SOIL_MOISTURE_MIN_VAL)*100/SOIL_MOISTURE_MAX_VAL);
 }
 
 
 int PotSensors::getLightLevel() const{
-    return analogRead(this->LIGHT_PIN);
+    return int((analogRead(this->LIGHT_PIN))*LIGHT_SENSOR_VOLTAGE/4095.0*200.0);
 }
 
 
