@@ -11,7 +11,7 @@ class MQTTClient:
     broker: str             # either IP address or Domain Name
     broker_port: int
     client_id :str
-    client: mqtt_client.Client = None
+    client: mqtt_client.Client|None = None
     MQTT_username: str
     MQTT_pass: str
 
