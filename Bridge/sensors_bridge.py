@@ -84,11 +84,12 @@ class Bridge():
 
 
     # still to do if you want ?? (maybe first conenction of knwon pots)
-    def newPotConn(self,topic: str):
-        # send all pot settings
-        # the pot should send the secretkey 
-        # Then the bridge should use the mqtt gateway api to claim the device and add it to the connection
-        return
+    def newPotConn(self,topic_parts):
+        id=topic_parts[1]
+        p = self.get_pot(id)
+        if p is None:
+            print("Error: Unknown/Unexpected Pot")
+            return
     
 # add check on moisture level if it is over the threshold
 # chenge to handle correctly prediction and to check if the model was loaded
@@ -144,7 +145,6 @@ class Bridge():
 
     def UpdateLeds(self, pot: Pot):
         final_effect=pot.base_color
-        
         if pot.data.moisture[pot.data.count-1] < pot.moisture_threshold: # if the measured moisture is lower than threshold
             final_effect=pot.water_effect
         if pot.data.aqi[pot.data.count-1] > Pot.AQI_threshold:
@@ -160,12 +160,50 @@ class Bridge():
         self.local_MQTT.publish_mess("pot/"+pot.ID_sensors+"/leds",message)
         print("pot/"+pot.ID_sensors+"/leds :  "+message)
 
+    def send_all_attributes(self,pot: Pot):
+        if pot.LED_on:
+                message="0"
+        else:
+            message="1"
+            self.send_pot_attribute(pot=pot,message=message) # change with update at the end
+
+        message= "6 "+str(pot.light_threshold)    
+        self.send_pot_attribute(pot=pot,message=message) 
+        
+        self.send_pot_attribute(pot,"5 "+str(int(pot.brightness)))
+        self.UpdateLeds(pot)
+
+    def get_shared_attributes(self, pot: Pot):
+        #http://desktop-rq61ei4.local:8080/api/v1/4ou816wmeglwnzthg965/attributes?sharedKeys=led_brightness,LED_on,light_threshold,healthy
+        url = self.server_url+pot.TB_HTTP_Token+"/attributes?sharedKeys=led_brightness,LED_on,light_threshold,healthy"
+        
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            attributes = response.json()
+            attributes=attributes["shared"]
+            for key,val in attributes.items():
+                self.changePotAttr(pot,key,val)
+            print("Shared attributes:")
+            print(json.dumps(attributes, indent=2))
+            return attributes
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Error making request: {e}")
+            return None
+
+
     def on_message_local(self,client,userdata,msg):
         message = msg.payload.decode("utf-8")  # Convert bytes to string
         parts = message.split(" ")          # Split at the first space only
         topic_parts = msg.topic.split("/")
         if len(topic_parts)==3 and topic_parts[2]=="/new_conn":
-            self.newPotConn(topic_parts[0]+topic_parts[1])
+            #self.newPotConn(topic_parts)
             return
         
         if len(topic_parts)==3 and topic_parts[2]=="/disconnect":   # LWT message received
@@ -186,9 +224,7 @@ class Bridge():
         if p is None:
             print("Error: Unknown/Unexpected Pot")
             return
-        if p.connected==False:
-            self.TB_MQTT.publish_mess("v1/gateway/connect",f'{{"device": "{p.TB_device_name}", "type": "Pot"}}')
-            p.connected=True
+        
         d=p.data
         d.temperature.append(int(parts[0]))
         d.humidity.append(int(parts[1]))
@@ -198,6 +234,14 @@ class Bridge():
         timestamp=int(time.time()*1000)
         d.timestamp.append(timestamp)
         d.count+=1
+
+        if p.connected==False:
+            self.TB_MQTT.publish_mess("v1/gateway/connect",f'{{"device": "{p.TB_device_name}", "type": "Pot"}}')    
+            p.connected=True
+            p.last_effect=ColorEffect()
+            self.get_shared_attributes(p)
+
+            #self.send_all_attributes(p)
 
         payload = {
             "ts": timestamp,
@@ -347,7 +391,7 @@ def upload_image():
         count={'ill':0,'healthy':0}
         for result in res:
             for box in result.boxes:  # Boxes object for bounding box outputs
-                class_id = box.cls.int()  # box.cls is a tensor, convert to int
+                class_id = int(box.cls.item())  # box.cls is a tensor, convert to int
                 class_name = br.yolo_model.names[class_id]
                 if class_name in count:
                     count[class_name] += 1

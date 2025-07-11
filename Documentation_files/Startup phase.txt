@@ -1,0 +1,15 @@
+Startup phase:
+Start hotspot from smartphone (Mi9T)
+Connect to it from the computer
+Open Docker Desktop
+Start Thingsboard server
+Power up raspberry pi 4
+Connect to it using ssh
+Inside the command do: 	cd Documents
+			(check if you are in venv of python 3.11)
+			python sensors_bridge.py
+			(wait for complete startup)
+When the script has started and connected
+connect power to the pot 
+Wait a minute and then check if on raspberry there is any sensor print
+connect the esp32 cam and check on raspberry if it is receiving images

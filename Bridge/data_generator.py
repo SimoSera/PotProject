@@ -6,12 +6,12 @@ import random
 import json
 import requests
 
-period: float
-days: int
-hours: int
-minutes: int
-starting_time: float
-http_url : str="http://desktop-...:8080/api/v1/telemetry"
+period: float =60
+days: int =1
+hours: int = 0
+minutes: int = 0
+starting_time: float = 
+http_url : str="http://DESKTOP-RQ61EI4.local:8080/api/v1/OenEZRx55rYiYpRmuI7y/telemetry"
 data: list[tuple[str, Callable[[], float]]] = [
     ("temperature", partial(random.gauss, 100, 10)),
     ("humidity", partial(random.uniform, 30, 60)),
@@ -35,9 +35,10 @@ def generate():
     duration= ((days*24+hours)*60+minutes)*60
     curr_time=starting_time
     while curr_time<starting_time+duration:
-        payload={'ts':curr_time}
+        payload: dict={'ts':(int(curr_time*1000))}
+        pay=payload["values"]
         for key, generator in data:
-            payload[key] = generator()
+           pay[key] = generator()
         send(http_url,payload)
         curr_time+=period
 

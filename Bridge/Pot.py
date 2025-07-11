@@ -67,7 +67,7 @@ data_dict = {}
 class Pot():
 
 
-    AQI_threshold: int =  4 # NOT SETTABLE BUT STATIC DEFINED BY STANDARDS
+    AQI_threshold: int =  3 # NOT SETTABLE BUT STATIC DEFINED BY STANDARDS
                         # USED IN SENSORSBRIDGE WHEN CHECK TO SET THE COLORS
                         # IF THE CURRENT AQI>= THIS THRESHOLD -> BAD AIR QUALITY
 
@@ -147,7 +147,7 @@ class Pot():
         auto_brightness_on=settings["auto_brightness_on"],
         auto_brightness_gamma=settings["auto_brightness_gamma"],
         brightness=settings["brightness"], 
-        ill_effect=settings["ill_effect"],
+        ill_effect=EffectFromString(settings["ill_effect"]),
         healthy=settings["healthy"])
 
     def to_dict(self) -> dict:

@@ -83,8 +83,10 @@ class MQTTClient:
             self.client.username_pw_set(self.MQTT_username,self.MQTT_pass)
         print(f"Username {self.MQTT_username}  pass: {self.MQTT_pass}")
         self.client.on_connect = on_connect
+        self.client.keepalive = 3600
+
         print(self.broker+":"+str(self.broker_port))
-        self.client.connect(self.broker, self.broker_port)
+        self.client.connect(self.broker, self.broker_port,keepalive=3600)
         self.client.on_disconnect=self.reconnection
         self.client.loop_start()  
 

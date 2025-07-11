@@ -229,7 +229,7 @@ int sendImage() {
 void loop() {
   sendImage();
   // Instead of delay consider shutting down the esp32 and waking it up after (forx example after 1 day)
- // esp_sleep_enable_timer_wakeup(600000000); //60 seconds
- // esp_deep_sleep_start();
-  delay(60000);
+  esp_sleep_enable_timer_wakeup(30000000); //30 seconds
+  esp_deep_sleep_start();
+  //delay(60000);
 }
